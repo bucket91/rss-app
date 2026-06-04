@@ -1,0 +1,6 @@
+{
+  "name": "BD RSS Reader",
+  "description": "A modern Bangladesh-First news and social RSS tracker fetching daily news, popular subreddits, and top YouTube channels from Bangladesh in English, supporting offline reading.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
