@@ -49,8 +49,9 @@ jobs:
           if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > my-upload-key.jks
           else
-            echo "WARNING: No KEYSTORE_BASE64 secret set. Using debug keystore for release build."
+            echo "WARNING: No KEYSTORE_BASE64 secret set. Using debug keystore as placeholder for release build."
             echo "For Google Play publishing, set KEYSTORE_BASE64, STORE_PASSWORD, and KEY_PASSWORD secrets."
+            cp debug.keystore my-upload-key.jks
           fi
       - name: Build release AAB
         run: ./gradlew :app:bundleRelease
