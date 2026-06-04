@@ -41,7 +41,7 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = if (System.getenv("STORE_PASSWORD") != null)
+      signingConfig = if (!System.getenv("STORE_PASSWORD").isNullOrBlank())
         signingConfigs.getByName("release")
       else
         signingConfigs.getByName("ciRelease")
