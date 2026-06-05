@@ -24,7 +24,9 @@ data class RssItemEntity(
     val category: String,
     val isSaved: Boolean = false,
     val thumbnailUrl: String? = null,
-    val flair: String? = null
+    val flair: String? = null,
+    val audioUrl: String? = null,
+    val localAudioPath: String? = null
 )
 
 @Dao
@@ -76,9 +78,12 @@ interface RssItemDao {
 
     @Query("SELECT * FROM rss_items WHERE guid = :guid LIMIT 1")
     suspend fun getItemByGuid(guid: String): RssItemEntity?
+
+    @Query("UPDATE rss_items SET localAudioPath = :localAudioPath WHERE guid = :guid")
+    suspend fun updateLocalAudioPath(guid: String, localAudioPath: String?)
 }
 
-@Database(entities = [RssFeedEntity::class, RssItemEntity::class], version = 2, exportSchema = false)
+@Database(entities = [RssFeedEntity::class, RssItemEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun rssFeedDao(): RssFeedDao
     abstract fun rssItemDao(): RssItemDao

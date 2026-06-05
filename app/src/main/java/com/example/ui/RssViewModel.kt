@@ -8,6 +8,8 @@ import com.example.data.AppDatabase
 import com.example.data.RssFeedEntity
 import com.example.data.RssItemEntity
 import com.example.data.RssRepository
+import com.example.service.PodcastDownloadService
+import com.example.service.PodcastPlayerManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -18,9 +20,14 @@ class RssViewModel(application: Application) : AndroidViewModel(application) {
     val reportedArticles = MutableStateFlow<Set<String>>(emptySet())
     val blockedFeeds = MutableStateFlow<Set<String>>(emptySet())
 
+    val downloadService: PodcastDownloadService
+    val playerManager: PodcastPlayerManager
+
     init {
         val database = AppDatabase.getDatabase(application)
         repository = RssRepository(database)
+        downloadService = PodcastDownloadService(application, repository)
+        playerManager = PodcastPlayerManager(application)
         
         reportedArticles.value = prefs.getStringSet("reported_articles_guids", emptySet())?.toSet() ?: emptySet()
         blockedFeeds.value = prefs.getStringSet("blocked_feeds_urls", emptySet())?.toSet() ?: emptySet()
@@ -163,5 +170,10 @@ class RssViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.clearCache()
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        playerManager.stop()
     }
 }

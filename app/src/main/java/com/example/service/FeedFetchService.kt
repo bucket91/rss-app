@@ -22,7 +22,8 @@ data class ParsedFeedItem(
     val pubDateLong: Long = System.currentTimeMillis(),
     val guid: String? = null,
     val thumbnailUrl: String? = null,
-    val flair: String? = null
+    val flair: String? = null,
+    val audioUrl: String? = null
 )
 
 /**
@@ -118,6 +119,7 @@ class FeedFetchService(private val client: OkHttpClient = OkHttpClient()) {
             var currentGuid = ""
             var currentThumbnailUrl: String? = null
             var currentFlair: String? = null
+            var currentAudioUrl: String? = null
             var insideItem = false
 
             while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -133,6 +135,7 @@ class FeedFetchService(private val client: OkHttpClient = OkHttpClient()) {
                             currentGuid = ""
                             currentThumbnailUrl = null
                             currentFlair = null
+                            currentAudioUrl = null
                         } else if (insideItem) {
                             val namespace = parser.namespace ?: ""
                             val isMediaTag = namespace.contains("yahoo.com", ignoreCase = true) || namespace.contains("mrss", ignoreCase = true)
@@ -143,8 +146,14 @@ class FeedFetchService(private val client: OkHttpClient = OkHttpClient()) {
                                 }
                                 tagName.equals("link", ignoreCase = true) -> {
                                     val href = parser.getAttributeValue(null, "href")
+                                    val rel = parser.getAttributeValue(null, "rel")
+                                    val type = parser.getAttributeValue(null, "type")
                                     if (href != null) {
-                                        currentLink = href.trim()
+                                        if (rel == "enclosure" && type != null && type.startsWith("audio/", ignoreCase = true)) {
+                                            currentAudioUrl = href.trim()
+                                        } else {
+                                            currentLink = href.trim()
+                                        }
                                     } else {
                                         currentLink = safeNextText(parser).trim()
                                     }
@@ -168,17 +177,28 @@ class FeedFetchService(private val client: OkHttpClient = OkHttpClient()) {
                                 }
                                 tagName.equals("enclosure", ignoreCase = true) -> {
                                     val type = parser.getAttributeValue(null, "type")
-                                    if (type != null && type.startsWith("image/", ignoreCase = true)) {
-                                        val url = parser.getAttributeValue(null, "url")
-                                        if (url != null) {
+                                    val url = parser.getAttributeValue(null, "url")
+                                    if (url != null) {
+                                        if (type != null && type.startsWith("image/", ignoreCase = true)) {
                                             currentThumbnailUrl = url
+                                        } else if (type != null && type.startsWith("audio/", ignoreCase = true)) {
+                                            currentAudioUrl = url
+                                        } else if (url.contains(".mp3") || url.contains(".wav") || url.contains(".m4a")) {
+                                            currentAudioUrl = url
                                         }
                                     }
                                 }
                                 tagName.equals("content", ignoreCase = true) || tagName.endsWith("content", ignoreCase = true) || tagName.endsWith("thumbnail", ignoreCase = true) -> {
                                     val url = parser.getAttributeValue(null, "url")
+                                    val type = parser.getAttributeValue(null, "type")
                                     if (url != null) {
-                                        currentThumbnailUrl = url
+                                        if (type != null && type.startsWith("audio/", ignoreCase = true)) {
+                                            currentAudioUrl = url
+                                        } else if (type != null && type.startsWith("image/", ignoreCase = true)) {
+                                            currentThumbnailUrl = url
+                                        } else {
+                                            currentThumbnailUrl = url
+                                        }
                                     }
                                 }
                             }
@@ -226,7 +246,8 @@ class FeedFetchService(private val client: OkHttpClient = OkHttpClient()) {
                                         pubDate = currentPubDate,
                                         pubDateLong = pubDateMs,
                                         thumbnailUrl = currentThumbnailUrl,
-                                        flair = currentFlair
+                                        flair = currentFlair,
+                                        audioUrl = currentAudioUrl
                                     )
                                 )
                             }

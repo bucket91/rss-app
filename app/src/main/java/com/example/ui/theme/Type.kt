@@ -11,26 +11,26 @@ val Typography =
   Typography(
     headlineLarge =
       TextStyle(
-        fontFamily = FontFamily.Serif,
-        fontWeight = FontWeight.Black,
-        fontSize = 32.sp,
-        lineHeight = 36.sp,
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 30.sp,
+        lineHeight = 34.sp,
         letterSpacing = (-0.5).sp,
       ),
     headlineMedium =
       TextStyle(
-        fontFamily = FontFamily.Serif,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 24.sp,
-        lineHeight = 28.sp,
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 22.sp,
+        lineHeight = 26.sp,
         letterSpacing = (-0.2).sp
       ),
     titleLarge =
       TextStyle(
-        fontFamily = FontFamily.Serif,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 20.sp,
-        lineHeight = 26.sp,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.sp
       ),
     titleMedium =

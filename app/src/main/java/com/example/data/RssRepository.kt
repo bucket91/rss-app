@@ -80,6 +80,24 @@ class RssRepository(private val db: AppDatabase) {
                 title = "Khalid Farhan",
                 category = "YouTube",
                 isPredefined = true
+            ),
+            RssFeedEntity(
+                url = "https://feeds.feedburner.com/TEDTalks_audio",
+                title = "TED Talks Daily",
+                category = "Podcasts",
+                isPredefined = true
+            ),
+            RssFeedEntity(
+                url = "https://feed.syntax.fm/",
+                title = "Syntax Podcast",
+                category = "Podcasts",
+                isPredefined = true
+            ),
+            RssFeedEntity(
+                url = "https://feeds.megaphone.fm/waveform",
+                title = "Waveform: The MKBHD Podcast",
+                category = "Podcasts",
+                isPredefined = true
             )
         )
     }
@@ -160,6 +178,12 @@ class RssRepository(private val db: AppDatabase) {
     suspend fun toggleSaveArticle(guid: String, isNowSaved: Boolean) {
         withContext(Dispatchers.IO) {
             itemDao.updateSavedStatus(guid, isNowSaved)
+        }
+    }
+
+    suspend fun updateLocalAudioPath(guid: String, localAudioPath: String?) {
+        withContext(Dispatchers.IO) {
+            itemDao.updateLocalAudioPath(guid, localAudioPath)
         }
     }
 

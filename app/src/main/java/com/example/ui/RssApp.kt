@@ -40,6 +40,10 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.example.data.RssFeedEntity
 import com.example.data.RssItemEntity
+import com.example.service.DownloadState
+import com.example.service.PlaybackInfo
+import com.example.service.PodcastDownloadService
+import com.example.service.PodcastPlayerManager
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -62,6 +66,7 @@ fun RssApp(
     val selectedArticle by viewModel.selectedArticle.collectAsState()
     val availableFlairs by viewModel.availableFlairs.collectAsState()
     val selectedFlair by viewModel.selectedFlair.collectAsState()
+    val playbackState by viewModel.playerManager.playbackState.collectAsState()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -70,11 +75,17 @@ fun RssApp(
                 TopAppBar(
                     title = {
                         Text(
-                            text = "Dispatch",
-                            fontFamily = FontFamily.Serif,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 28.sp,
-                            letterSpacing = (-0.5).sp,
+                            text = when (currentTab) {
+                                "Articles" -> "RSS // ${selectedCategory.uppercase(Locale.ROOT)}"
+                                "Saved" -> "SAVED // READING LIST"
+                                "Podcasts" -> "MEDIA // PODCASTS"
+                                "Feeds" -> "CONFIG // FEEDS"
+                                else -> "READER"
+                            },
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            letterSpacing = 1.sp,
                             color = MaterialTheme.colorScheme.onBackground
                         )
                     },
@@ -99,9 +110,9 @@ fun RssApp(
                     LazyRow(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 12.dp, top = 4.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(bottom = 6.dp, top = 2.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(categories) { category ->
                             val isSelected = selectedCategory == category
@@ -111,7 +122,8 @@ fun RssApp(
                                 label = {
                                     Text(
                                         text = if (category == "All") "All Stories" else category,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = 11.sp
                                     )
                                 },
                                 colors = FilterChipDefaults.filterChipColors(
@@ -120,7 +132,7 @@ fun RssApp(
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                                     labelColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 ),
-                                shape = RoundedCornerShape(20.dp),
+                                shape = RoundedCornerShape(4.dp),
                                 modifier = Modifier.testTag("category_chip_$category")
                             )
                         }
@@ -131,18 +143,18 @@ fun RssApp(
                         LazyRow(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 12.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                .padding(bottom = 6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             item {
                                 Text(
                                     text = "Filter:",
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                                    modifier = Modifier.padding(end = 4.dp)
+                                    modifier = Modifier.padding(end = 2.dp)
                                 )
                             }
                             items(availableFlairs) { flair ->
@@ -154,14 +166,14 @@ fun RssApp(
                                         Text(
                                             text = flair,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            fontSize = 12.sp
+                                            fontSize = 11.sp
                                         )
                                     },
                                     colors = FilterChipDefaults.elevatedFilterChipColors(
                                         selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                                         selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
                                     ),
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(4.dp),
                                     modifier = Modifier.testTag("flair_chip_$flair")
                                 )
                             }
@@ -189,6 +201,13 @@ fun RssApp(
                     icon = { Icon(Icons.Default.Favorite, contentDescription = "Saved Articles") },
                     label = { Text("Saved") },
                     modifier = Modifier.testTag("nav_saved_tab")
+                )
+                NavigationBarItem(
+                    selected = currentTab == "Podcasts",
+                    onClick = { currentTab = "Podcasts" },
+                    icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Podcasts & Media") },
+                    label = { Text("Podcasts") },
+                    modifier = Modifier.testTag("nav_podcasts_tab")
                 )
                 NavigationBarItem(
                     selected = currentTab == "Feeds",
@@ -224,6 +243,14 @@ fun RssApp(
                         onRemoveSave = { viewModel.toggleSaveArticle(it) }
                     )
                 }
+                "Podcasts" -> {
+                    PodcastScreen(
+                        viewModel = viewModel,
+                        onPlayEpisode = { item -> viewModel.playerManager.playEpisode(item) },
+                        onDownloadEpisode = { item -> viewModel.downloadService.downloadEpisode(item) },
+                        onDeleteEpisode = { item -> viewModel.downloadService.deleteEpisode(item) }
+                    )
+                }
                 "Feeds" -> {
                     FeedsScreen(
                         feeds = feeds,
@@ -240,6 +267,21 @@ fun RssApp(
                         .fillMaxWidth()
                         .align(Alignment.TopCenter),
                     color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+
+            AnimatedVisibility(
+                visible = playbackState.item != null,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                MiniPlayerCard(
+                    playbackState = playbackState,
+                    playerManager = viewModel.playerManager,
+                    downloadService = viewModel.downloadService
                 )
             }
         }
@@ -315,8 +357,8 @@ fun ArticlesScreen(
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             items(articles, key = { it.guid }) { article ->
                 ArticleCard(
@@ -374,8 +416,8 @@ fun SavedScreen(
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             items(savedArticles, key = { it.guid }) { article ->
                 ArticleCard(
@@ -436,58 +478,24 @@ fun ArticleCard(
             .border(
                 1.dp,
                 MaterialTheme.colorScheme.surfaceVariant,
-                RoundedCornerShape(28.dp)
+                RoundedCornerShape(4.dp)
             )
             .testTag("article_card_${article.guid}"),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(4.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column {
-            if (article.thumbnailUrl != null) {
-                AsyncImage(
-                    model = coil.request.ImageRequest.Builder(LocalContext.current)
-                        .data(article.thumbnailUrl)
-                        .crossfade(true)
-                        .precision(coil.size.Precision.EXACT)
-                        .build(),
-                    contentDescription = "Article image thumbnail",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                // High contrast aesthetic placeholder matching our dark theme slate and light purple hues
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(130.dp)
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                )
-                            )
-                        )
-                        .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = article.category.uppercase(Locale.ROOT),
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 2.sp,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            Column(modifier = Modifier.padding(20.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
                 // Header Source info with circle badge logo and content moderation controls
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -496,26 +504,27 @@ fun ArticleCard(
                 ) {
                     Row(
                         modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(24.dp)
-                                .background(MaterialTheme.colorScheme.onBackground, RoundedCornerShape(6.dp)),
+                                .size(18.dp)
+                                .background(MaterialTheme.colorScheme.onBackground, RoundedCornerShape(2.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = sourceAbbrev,
                                 color = MaterialTheme.colorScheme.background,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.ExtraBold
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                         Text(
                             text = "$sourceLabel • ${formatTimeAgo(article.pubDateLong)}",
                             style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -526,12 +535,13 @@ fun ArticleCard(
                         var menuExpanded by remember { mutableStateOf(false) }
                         IconButton(
                             onClick = { menuExpanded = true },
-                            modifier = Modifier.size(24.dp).testTag("more_options_${article.guid}")
+                            modifier = Modifier.size(20.dp).testTag("more_options_${article.guid}")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = "More options",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                         DropdownMenu(
@@ -539,8 +549,8 @@ fun ArticleCard(
                             onDismissRequest = { menuExpanded = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Report Content") },
-                                leadingIcon = { Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                text = { Text("Report Content", fontSize = 12.sp) },
+                                leadingIcon = { Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(16.dp)) },
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.reportArticle(article.guid)
@@ -548,8 +558,8 @@ fun ArticleCard(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Block publisher") },
-                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                text = { Text("Block publisher", fontSize = 12.sp) },
+                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp)) },
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.muteFeed(article.feedUrl)
@@ -560,44 +570,158 @@ fun ArticleCard(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // Heading matching Bold Typography
                 Text(
                     text = article.title,
-                    fontFamily = FontFamily.Serif,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 20.sp,
-                    lineHeight = 26.sp,
-                    letterSpacing = (-0.3).sp,
-                    maxLines = 3,
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
                 // Short summary / preview
-                Text(
-                    text = article.description,
-                    fontFamily = FontFamily.SansSerif,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (article.description.isNotBlank()) {
+                    Text(
+                        text = article.description,
+                        fontFamily = FontFamily.SansSerif,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                if (article.audioUrl != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    
+                    val downloadStates by viewModel.downloadService.downloadStates.collectAsState()
+                    val playbackState by viewModel.playerManager.playbackState.collectAsState()
+                    
+                    val isDownloaded = viewModel.downloadService.isDownloaded(article)
+                    val downloadState = downloadStates[article.guid] ?: DownloadState.Idle
+                    val isCurrentPlaying = playbackState.item?.guid == article.guid && playbackState.isPlaying
 
-                // Divider and clean footer actions
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f),
+                                RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "🎙️",
+                                fontSize = 12.sp
+                            )
+                            Column {
+                                Text(
+                                    text = "Podcast",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = if (isDownloaded) "Offline" else "Stream",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 8.sp
+                                )
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            when (downloadState) {
+                                is DownloadState.Downloading -> {
+                                    CircularProgressIndicator(
+                                        progress = { downloadState.progress / 100f },
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 1.5.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                else -> {
+                                    if (isDownloaded) {
+                                        IconButton(
+                                            onClick = { viewModel.downloadService.deleteEpisode(article) },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete downloaded episode",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    } else {
+                                        IconButton(
+                                            onClick = { viewModel.downloadService.downloadEpisode(article) },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircle,
+                                                contentDescription = "Download episode",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Button(
+                                onClick = { viewModel.playerManager.playEpisode(article) },
+                                contentPadding = PaddingValues(horizontal = 6.dp),
+                                modifier = Modifier.height(24.dp),
+                                shape = RoundedCornerShape(4.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isCurrentPlaying) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = if (isCurrentPlaying) Icons.Default.Clear else Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (isCurrentPlaying) "Pause" else "Play",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Footer actions
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f, fill = false)
                     ) {
@@ -607,14 +731,14 @@ fun ArticleCard(
                                 modifier = Modifier
                                     .background(
                                         MaterialTheme.colorScheme.secondaryContainer,
-                                        RoundedCornerShape(20.dp)
+                                        RoundedCornerShape(2.dp)
                                     )
-                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = flair.uppercase(Locale.ROOT),
-                                    fontSize = 9.sp,
+                                    fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.5.sp,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -627,17 +751,34 @@ fun ArticleCard(
                         IconButton(
                             onClick = onSaveToggle,
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(28.dp)
                                 .testTag("save_article_${article.guid}")
                         ) {
                             Icon(
                                 imageVector = if (article.isSaved) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                                 contentDescription = if (article.isSaved) "Remove from Saved" else "Save Article",
-                                tint = if (article.isSaved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = if (article.isSaved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
                 }
+            }
+
+            if (article.thumbnailUrl != null) {
+                AsyncImage(
+                    model = coil.request.ImageRequest.Builder(LocalContext.current)
+                        .data(article.thumbnailUrl)
+                        .crossfade(true)
+                        .precision(coil.size.Precision.EXACT)
+                        .build(),
+                    contentDescription = "Article image thumbnail",
+                    modifier = Modifier
+                        .size(76.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .align(Alignment.CenterVertically),
+                    contentScale = ContentScale.Crop
+                )
             }
         }
     }
@@ -669,9 +810,9 @@ fun FeedsScreen(
                     .border(
                         1.dp,
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                        RoundedCornerShape(16.dp)
+                        RoundedCornerShape(4.dp)
                     ),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(4.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.02f)
                 )
@@ -681,7 +822,7 @@ fun FeedsScreen(
                         text = "Subscribe to RSS Feed",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
-                        fontFamily = FontFamily.Serif,
+                        fontFamily = FontFamily.SansSerif,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(4.dp))
@@ -703,7 +844,7 @@ fun FeedsScreen(
                             .fillMaxWidth()
                             .testTag("feed_url_input"),
                         singleLine = true,
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(4.dp)
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -721,7 +862,7 @@ fun FeedsScreen(
                                 .weight(1f)
                                 .testTag("feed_name_input"),
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(4.dp)
                         )
                         OutlinedTextField(
                             value = inputCategory,
@@ -732,7 +873,7 @@ fun FeedsScreen(
                                 .weight(1f)
                                 .testTag("feed_category_input"),
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(4.dp)
                         )
                     }
 
@@ -754,7 +895,7 @@ fun FeedsScreen(
                             .fillMaxWidth()
                             .height(48.dp)
                             .testTag("subscribe_button"),
-                        shape = RoundedCornerShape(24.dp)
+                        shape = RoundedCornerShape(4.dp)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -770,7 +911,7 @@ fun FeedsScreen(
                 text = "Active Subscriptions",
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
-                fontFamily = FontFamily.Serif,
+                fontFamily = FontFamily.SansSerif,
                 modifier = Modifier.padding(top = 8.dp),
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -784,9 +925,9 @@ fun FeedsScreen(
                     .border(
                         1.dp,
                         if (isBlocked) MaterialTheme.colorScheme.error.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(12.dp)
+                        RoundedCornerShape(4.dp)
                     ),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(4.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = if (isBlocked) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface
                 )
@@ -912,9 +1053,9 @@ fun FeedsScreen(
                     .border(
                         1.dp,
                         MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(16.dp)
+                        RoundedCornerShape(4.dp)
                     ),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(4.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
                 )
@@ -924,7 +1065,7 @@ fun FeedsScreen(
                         text = "Publisher & Compliance Info",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
-                        fontFamily = FontFamily.Serif,
+                        fontFamily = FontFamily.SansSerif,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -992,7 +1133,7 @@ fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
         title = {
             Text(
                 text = "Privacy Policy",
-                fontFamily = FontFamily.Serif,
+                fontFamily = FontFamily.SansSerif,
                 fontWeight = FontWeight.Bold
             )
         },
@@ -1046,7 +1187,7 @@ fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
                 Text("Close", fontWeight = FontWeight.Bold)
             }
         },
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(4.dp),
         properties = DialogProperties(usePlatformDefaultWidth = false)
     )
 }
@@ -1109,9 +1250,9 @@ fun ArticleDetailDialog(
                 .border(
                     1.dp,
                     MaterialTheme.colorScheme.surfaceVariant,
-                    RoundedCornerShape(28.dp)
+                    RoundedCornerShape(4.dp)
                 ),
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(4.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.background
             )
@@ -1211,11 +1352,10 @@ fun ArticleDetailDialog(
                         // Title matching Bold Typography (H1 heavy design)
                         Text(
                             text = article.title,
-                            fontFamily = FontFamily.Serif,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 28.sp,
-                            lineHeight = 34.sp,
-                            letterSpacing = (-0.6).sp,
+                            fontFamily = FontFamily.SansSerif,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 24.sp,
+                            lineHeight = 30.sp,
                             color = MaterialTheme.colorScheme.onBackground
                         )
 
@@ -1235,7 +1375,7 @@ fun ArticleDetailDialog(
                                 modifier = Modifier
                                     .background(
                                         MaterialTheme.colorScheme.primaryContainer,
-                                        RoundedCornerShape(8.dp)
+                                        RoundedCornerShape(4.dp)
                                     )
                                     .padding(horizontal = 8.dp, vertical = 4.dp)
                             )
@@ -1250,7 +1390,7 @@ fun ArticleDetailDialog(
                                     modifier = Modifier
                                         .background(
                                             MaterialTheme.colorScheme.secondaryContainer,
-                                            RoundedCornerShape(8.dp)
+                                            RoundedCornerShape(4.dp)
                                         )
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 )
@@ -1260,7 +1400,7 @@ fun ArticleDetailDialog(
                                 modifier = Modifier
                                     .background(
                                         MaterialTheme.colorScheme.surfaceVariant,
-                                        RoundedCornerShape(8.dp)
+                                        RoundedCornerShape(4.dp)
                                     )
                                     .padding(horizontal = 8.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -1297,11 +1437,11 @@ fun ArticleDetailDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(240.dp)
-                                    .clip(RoundedCornerShape(20.dp))
+                                    .clip(RoundedCornerShape(4.dp))
                                     .border(
                                         1.dp,
                                         MaterialTheme.colorScheme.surfaceVariant,
-                                        RoundedCornerShape(20.dp)
+                                        RoundedCornerShape(4.dp)
                                     ),
                                 contentScale = ContentScale.Crop
                             )
@@ -1335,7 +1475,7 @@ fun ArticleDetailDialog(
                                 .fillMaxWidth()
                                 .height(52.dp)
                                 .testTag("open_browser_button"),
-                            shape = RoundedCornerShape(26.dp)
+                            shape = RoundedCornerShape(4.dp)
                         ) {
                             Text("Open Full Story", fontWeight = FontWeight.Bold)
                         }
@@ -1362,3 +1502,699 @@ fun formatTimeAgo(timeMs: Long): String {
     val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
     return sdf.format(Date(timeMs))
 }
+
+@Composable
+fun PodcastScreen(
+    viewModel: RssViewModel,
+    onPlayEpisode: (RssItemEntity) -> Unit,
+    onDownloadEpisode: (RssItemEntity) -> Unit,
+    onDeleteEpisode: (RssItemEntity) -> Unit
+) {
+    val articles by viewModel.articlesList.collectAsState()
+    val downloadStates by viewModel.downloadService.downloadStates.collectAsState()
+    val playbackState by viewModel.playerManager.playbackState.collectAsState()
+
+    val podcastEpisodes = remember(articles) {
+        articles.filter { it.audioUrl != null }
+    }
+
+    var showOnlyDownloaded by remember { mutableStateOf(false) }
+
+    val displayedEpisodes = remember(podcastEpisodes, showOnlyDownloaded, downloadStates) {
+        if (showOnlyDownloaded) {
+            podcastEpisodes.filter { viewModel.downloadService.isDownloaded(it) }
+        } else {
+            podcastEpisodes
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Card(
+            shape = RoundedCornerShape(4.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Button(
+                    onClick = { showOnlyDownloaded = false },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (!showOnlyDownloaded) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        contentColor = if (!showOnlyDownloaded) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("All Podcasts", fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = { showOnlyDownloaded = true },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (showOnlyDownloaded) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        contentColor = if (showOnlyDownloaded) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text("Downloaded", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (displayedEpisodes.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = if (showOnlyDownloaded) "No Offline Downloads" else "No Podcast Episodes Found",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (showOnlyDownloaded) "Any podcasts you download will appear here so you can play them without an internet connection."
+                               else "Check back later! Or trigger a refresh of RSS feeds to load the latest episodes.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 96.dp)
+            ) {
+                items(displayedEpisodes, key = { it.guid }) { item ->
+                    PodcastEpisodeCard(
+                        item = item,
+                        viewModel = viewModel,
+                        downloadState = downloadStates[item.guid] ?: DownloadState.Idle,
+                        isCurrentPlaying = playbackState.item?.guid == item.guid && playbackState.isPlaying,
+                        onPlayClick = { onPlayEpisode(item) },
+                        onDownloadClick = { onDownloadEpisode(item) },
+                        onDeleteClick = { onDeleteEpisode(item) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PodcastEpisodeCard(
+    item: RssItemEntity,
+    viewModel: RssViewModel,
+    downloadState: DownloadState,
+    isCurrentPlaying: Boolean,
+    onPlayClick: () -> Unit,
+    onDownloadClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    val isDownloaded = viewModel.downloadService.isDownloaded(item)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.surfaceVariant,
+                RoundedCornerShape(4.dp)
+            ),
+        shape = RoundedCornerShape(4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (item.thumbnailUrl != null) {
+                    AsyncImage(
+                        model = item.thumbnailUrl,
+                        contentDescription = "Podcast Thumbnail",
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                                RoundedCornerShape(4.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "📻",
+                            fontSize = 20.sp
+                        )
+                    }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Published • ${formatTimeAgo(item.pubDateLong)}",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            if (item.description.isNotEmpty()) {
+                Text(
+                    text = item.description,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    when (downloadState) {
+                        is DownloadState.Downloading -> {
+                            CircularProgressIndicator(
+                                progress = { downloadState.progress / 100f },
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 1.5.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Downloading ${downloadState.progress}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        else -> {
+                            if (isDownloaded) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Downloaded offline",
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "Offline Ready",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            } else {
+                                Text(
+                                    text = "Online Stream",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (isDownloaded && downloadState !is DownloadState.Downloading) {
+                        IconButton(
+                            onClick = onDeleteClick,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete download",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    } else if (!isDownloaded && downloadState !is DownloadState.Downloading) {
+                        IconButton(
+                            onClick = onDownloadClick,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Download to local device",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = onPlayClick,
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp),
+                        modifier = Modifier.height(24.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isCurrentPlaying) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = if (isCurrentPlaying) Icons.Default.Clear else Icons.Default.PlayArrow,
+                            contentDescription = if (isCurrentPlaying) "Pause" else "Play",
+                            modifier = Modifier.size(10.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = if (isCurrentPlaying) "Pause" else "Play",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MiniPlayerCard(
+    playbackState: PlaybackInfo,
+    playerManager: PodcastPlayerManager,
+    downloadService: PodcastDownloadService
+) {
+    val item = playbackState.item ?: return
+    var showFullPlayer by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showFullPlayer = true }
+            .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+            .testTag("mini_player_bar"),
+        shape = RoundedCornerShape(4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (item.thumbnailUrl != null) {
+                        AsyncImage(
+                            model = item.thumbnailUrl,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    RoundedCornerShape(4.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("📻", fontSize = 18.sp)
+                        }
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (downloadService.isDownloaded(item)) "Playing offline" else "Streaming online",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        onClick = { playerManager.skipBackward() }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Skip back 15s",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (playbackState.isPlaying) {
+                                playerManager.pause()
+                            } else {
+                                playerManager.resume()
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (playbackState.isPlaying) Icons.Default.Clear else Icons.Default.PlayArrow,
+                            contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
+                            modifier = Modifier.size(28.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { playerManager.stop() }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Stop",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            if (playbackState.durationMs > 0) {
+                LinearProgressIndicator(
+                    progress = { playbackState.progressMs.toFloat() / playbackState.durationMs.toFloat() },
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                )
+            }
+        }
+    }
+
+    if (showFullPlayer) {
+        FullPlayerDialog(
+            playbackState = playbackState,
+            playerManager = playerManager,
+            downloadService = downloadService,
+            onDismiss = { showFullPlayer = false }
+        )
+    }
+}
+
+@Composable
+fun FullPlayerDialog(
+    playbackState: PlaybackInfo,
+    playerManager: PodcastPlayerManager,
+    downloadService: PodcastDownloadService,
+    onDismiss: () -> Unit
+) {
+    val item = playbackState.item ?: return
+    var isDragging by remember { mutableStateOf(false) }
+    var dragValue by remember { mutableFloatStateOf(0f) }
+
+    val progressValue = if (isDragging) dragValue else {
+        if (playbackState.durationMs > 0) {
+            playbackState.progressMs.toFloat() / playbackState.durationMs.toFloat()
+        } else 0f
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Minimize Player",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Text(
+                        text = "Now Playing",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(
+                        onClick = { playerManager.stop(); onDismiss() }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Player",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                ) {
+                    if (item.thumbnailUrl != null) {
+                        AsyncImage(
+                            model = item.thumbnailUrl,
+                            contentDescription = "Episode Cover",
+                            modifier = Modifier
+                                .fillMaxWidth(0.85f)
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(4.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.85f)
+                                .aspectRatio(1f)
+                                .background(
+                                    Brush.linearGradient(
+                                        colors = listOf(
+                                            MaterialTheme.colorScheme.primaryContainer,
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                        )
+                                    ),
+                                    RoundedCornerShape(4.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("📻", fontSize = 72.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        minLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    val author = if (item.feedUrl.contains("ted", ignoreCase = true)) "TED Talks" else "Podcast Episode"
+                    Text(
+                        text = author,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Slider(
+                        value = progressValue,
+                        onValueChange = { newVal ->
+                            isDragging = true
+                            dragValue = newVal
+                        },
+                        onValueChangeFinished = {
+                            playerManager.seekTo((dragValue * playbackState.durationMs).toInt())
+                            isDragging = false
+                        },
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = formatMillis(playbackState.progressMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = formatMillis(playbackState.durationMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { playerManager.skipBackward() },
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Skip Back 15 seconds",
+                            modifier = Modifier.size(36.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                            .clickable {
+                                if (playbackState.isPlaying) {
+                                    playerManager.pause()
+                                } else {
+                                    playerManager.resume()
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (playbackState.isPlaying) Icons.Default.Clear else Icons.Default.PlayArrow,
+                            contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
+                            modifier = Modifier.size(40.dp),
+                            tint = Color.White
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { playerManager.skipForward() },
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Skip Forward 15 seconds",
+                            modifier = Modifier.size(36.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun formatMillis(ms: Int): String {
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+}
+

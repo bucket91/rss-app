@@ -27,7 +27,9 @@ object RssParser {
                 category = category,
                 isSaved = false,
                 thumbnailUrl = item.thumbnailUrl,
-                flair = item.flair
+                flair = item.flair,
+                audioUrl = item.audioUrl,
+                localAudioPath = null
             )
         }
     }
